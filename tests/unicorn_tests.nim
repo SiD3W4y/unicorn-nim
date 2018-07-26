@@ -47,8 +47,6 @@ proc testARM() =
   engine.regWrite32(UC_ARM_REG_R1, 33)
   engine.emuStart(0x0, 0x1000, 0, 1)
 
-  echo "result = " & $engine.regRead32(UC_ARM_REG_R0)
-
   assert(engine.regRead32(UC_ARM_REG_R0) == 66)
   
 
