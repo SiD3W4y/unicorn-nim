@@ -1,8 +1,6 @@
 # unicorn-nim
-This project is a simple and not feature complete wrapper around Unicorn.
-
-# TODO
-- Add Hooks
+This project is a simple and not feature complete wrapper around Unicorn for nim. You can check the tests
+folder for examples on how to use the api.
 
 ## Example code
 
