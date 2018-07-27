@@ -73,7 +73,6 @@ type
     MEM_FETCH = 1 shl 12,
     MEM_READ_AFTER = 1 shl 13,
   
-  UcEngine* = pointer
   UcHook* =  csize
 
 const
@@ -106,30 +105,35 @@ genEnumFlags(MemProt)
 genEnumFlags(MemAccess)
 genEnumFlags(HookType)
 
+type
+  UnicornEngine* = pointer
+
+  UnicornException* = object of Exception
+  UcHookCode* = proc(engine: UnicornEngine, address: uint64, size: uint32) {.cdecl.}
+  UcHookIntr* = proc(engine: UnicornEngine, intno: uint32) {.cdecl.}
+  UcHookIn* = proc(engine: UnicornEngine, port: uint32, size: int) {.cdecl.}
+  UcHookOut* = proc(engine: UnicornEngine, port: uint32, size: int, value: uint32) {.cdecl.}
+  UcHookMem* = proc(engine: UnicornEngine, memtype: MemAccess, address: uint64, size: int, value: uint64) {.cdecl.}
+
 # Now the raw unicorn api
 proc uc_version*(major: ptr cuint, minor: ptr cuint): cuint {.cdecl, importc, dynlib: libname .}
 proc uc_arch_supported*(arch: Architecture): bool {.cdecl, importc, dynlib: libname .}
-proc uc_open*(arch: Architecture, mode: uint, engine: ptr UcEngine): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_close*(engine: UcEngine): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_open*(arch: Architecture, mode: uint, engine: ptr UnicornEngine): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_close*(engine: UnicornEngine): UcError {.cdecl, importc, dynlib: libname .}
 proc uc_strerror*(error: UcError): cstring {.cdecl, importc, dynlib: libname .}
-proc uc_reg_write*(engine: UcEngine, reg_id: cint, target: pointer): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_reg_read*(engine: UcEngine, reg_id: cint, value: pointer): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_mem_write*(engine: UcEngine, address: uint64, buffer: cstring, size: csize): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_mem_read*(engine: UcEngine, address: uint64, buffer: pointer, size: csize): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_emu_start*(engine: UcEngine, start: uint64, stop: uint64, timeout: uint64, count: uint64): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_emu_stop*(engine: UcEngine): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_hook_add*(engine: UcEngine, hook: ptr UcHook, hook_type: HookType, callback: pointer, start: uint64, stop: uint64): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_hook_del*(engine: UcEngine, hook: UcHook): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_mem_map*(engine: UcEngine, address: uint64, size: csize, perms: uint32): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_mem_map_ptr*(engine: UcEngine, address: uint64, size: csize, perms: uint32, mem: pointer): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_mem_unmap*(engine: UcEngine, address: uint64, size: csize): UcError {.cdecl, importc, dynlib: libname .}
-proc uc_mem_protect*(engine: UcEngine, address: uint64, size: csize, perms: uint32): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_reg_write*(engine: UnicornEngine, reg_id: cint, target: pointer): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_reg_read*(engine: UnicornEngine, reg_id: cint, value: pointer): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_mem_write*(engine: UnicornEngine, address: uint64, buffer: cstring, size: csize): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_mem_read*(engine: UnicornEngine, address: uint64, buffer: pointer, size: csize): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_emu_start*(engine: UnicornEngine, start: uint64, stop: uint64, timeout: uint64, count: uint64): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_emu_stop*(engine: UnicornEngine): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_hook_add*(engine: UnicornEngine, hook: ptr UcHook, hook_type: HookType, callback: pointer, start: uint64, stop: uint64): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_hook_del*(engine: UnicornEngine, hook: UcHook): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_mem_map*(engine: UnicornEngine, address: uint64, size: csize, perms: uint32): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_mem_map_ptr*(engine: UnicornEngine, address: uint64, size: csize, perms: uint32, mem: pointer): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_mem_unmap*(engine: UnicornEngine, address: uint64, size: csize): UcError {.cdecl, importc, dynlib: libname .}
+proc uc_mem_protect*(engine: UnicornEngine, address: uint64, size: csize, perms: uint32): UcError {.cdecl, importc, dynlib: libname .}
 
-type
-  UnicornEngine* = ref object of RootObj
-    engine*: UcEngine
-
-  UnicornException* = object of Exception
 
 # handle exceptions, returning the error message
 template raiseOnError(code: UcError) =
@@ -137,16 +141,15 @@ template raiseOnError(code: UcError) =
     raise newException(UnicornException, $uc_strerror(code))
 
 proc newUnicornEngine*(arch: Architecture, mode: uint): UnicornEngine =
-  new(result)
-  uc_open(arch, mode, addr result.engine).raiseOnError()
+  uc_open(arch, mode, addr result).raiseOnError()
 
 proc close*(uc: UnicornEngine) =
-  uc_close(uc.engine).raiseOnError()
+  uc_close(uc).raiseOnError()
 
 # reg write
 proc regWrite[T](uc: UnicornEngine, reg_id: cint, target: T) =
   var numCopy = target
-  uc_reg_write(uc.engine, reg_id, addr numCopy).raiseOnError()
+  uc_reg_write(uc, reg_id, addr numCopy).raiseOnError()
 
 proc regWrite8*(uc: UnicornEngine, reg_id: cint, target: uint8) =
   regWrite[uint8](uc, reg_id, target)
@@ -163,7 +166,7 @@ proc regWrite64*(uc: UnicornEngine, reg_id: cint, target: uint64) =
 # dunno why I can't call the function with the <object>.regRead[<type>](args...) syntax
 # to be able to use the object syntax we have to write every width
 proc regRead[T](uc: UnicornEngine, reg_id: cint): T =
-  uc_reg_read(uc.engine, reg_id, addr result).raiseOnError()
+  uc_reg_read(uc, reg_id, addr result).raiseOnError()
 
 proc regRead8*(uc: UnicornEngine, reg_id: cint): uint8 =
   result = regRead[uint8](uc, reg_id)
@@ -179,20 +182,35 @@ proc regRead64*(uc: UnicornEngine, reg_id: cint): uint64 =
 
 # memory functions
 proc memMap*(uc: UnicornEngine, address: uint64, size: csize, perms: MemProt) =
-  uc_mem_map(uc.engine, address, size, perms.uint32).raiseOnError()
+  uc_mem_map(uc, address, size, perms.uint32).raiseOnError()
 
 proc memUnmap*(uc: UnicornEngine, address: uint64, size: csize) =
-  uc_mem_unmap(uc.engine, address, size).raiseOnError()
+  uc_mem_unmap(uc, address, size).raiseOnError()
 
 proc memWrite*(uc: UnicornEngine, address: uint64, data: string) =
-  uc_mem_write(uc.engine, address, data, len(data)).raiseOnError()
+  uc_mem_write(uc, address, data, len(data)).raiseOnError()
 
 proc memRead*(uc: UnicornEngine, address: uint64, len: csize): string =
   result = newString(len)
-  uc_mem_read(uc.engine, address, addr result[0], len).raiseOnError()
+  uc_mem_read(uc, address, addr result[0], len).raiseOnError()
 
 proc memProtect*(uc: UnicornEngine, address: uint64, size: csize, prot: MemProt) =
-  uc_mem_protect(uc.engine, address, size, prot.uint32).raiseOnError()
+  uc_mem_protect(uc, address, size, prot.uint32).raiseOnError()
 
 proc emuStart*(uc: UnicornEngine, start: uint64, stop: uint64, timeout: uint64, count: uint64) =
-  uc_emu_start(uc.engine, start, stop, timeout, count).raiseOnError()
+  uc_emu_start(uc, start, stop, timeout, count).raiseOnError()
+
+proc hookCode*(uc: UnicornEngine, hook_type: HookType, hook: UcHookCode, start: uint64, stop: uint64): UcHook =
+  uc_hook_add(uc, addr result, hook_type, hook, start, stop).raiseOnError()
+
+proc hookIntr*(uc: UnicornEngine, hook_type: HookType, hook: UcHookIntr, start: uint64, stop: uint64): UcHook =
+  uc_hook_add(uc, addr result, hook_type, hook, start, stop).raiseOnError()
+
+proc hookIn*(uc: UnicornEngine, hook_type: HookType, hook: UcHookIn, start: uint64, stop: uint64): UcHook =
+  uc_hook_add(uc, addr result, hook_type, hook, start, stop).raiseOnError()
+
+proc hookOut*(uc: UnicornEngine, hook_type: HookType, hook: UcHookOut, start: uint64, stop: uint64): UcHook =
+  uc_hook_add(uc, addr result, hook_type, hook, start, stop).raiseOnError()
+
+proc hookMem*(uc: UnicornEngine, hook_type: HookType, hook: UcHookMem, start: uint64, stop: uint64): UcHook =
+  uc_hook_add(uc, addr result, hook_type, hook, start, stop).raiseOnError()
